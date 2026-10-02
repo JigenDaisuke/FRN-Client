@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical" android:padding="16dp"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+    <TextView android:text="FRN - server.voip-italia.net:10024 - Nazionale"
+        android:textStyle="bold" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingBottom="12dp"/>
+    <EditText android:id="@+id/etNome" android:hint="Nome Utente (es. Antonio)"
+        android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <EditText android:id="@+id/etNick" android:hint="Nick / Callsign (es. Tonino)"
+        android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <EditText android:id="@+id/etEmail" android:hint="Email (es. tonino@email.com)" android:inputType="textEmailAddress"
+        android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Button android:id="@+id/btnConnect" android:text="CONNETTI A NAZIONALE"
+        android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp"/>
+    <TextView android:id="@+id/tvStatus" android:text="Disconnesso"
+        android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="8dp"/>
+    <TextView android:id="@+id/tvClients" android:text="Nessun client"
+        android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:background="#111" android:textColor="#0f0" android:fontFamily="monospace" android:padding="8dp"/>
+    <Button android:id="@+id/btnPtt" android:text="🎙️ PREMI PER PARLARE"
+        android:layout_width="match_parent" android:layout_height="90dp" android:textSize="20sp" android:backgroundTint="#d32f2f"/>
+</LinearLayout>
