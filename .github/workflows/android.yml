@@ -1,7 +1,5 @@
 name: Build APK
 
-# Compila l'APK sui server di GitHub (hanno SDK Android + rete).
-# Parte a ogni push e puoi anche avviarlo a mano (Actions -> Build APK -> Run workflow).
 on:
   push:
   workflow_dispatch:
@@ -18,8 +16,8 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Accetta le licenze dell'SDK preinstallato
+        run: yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
 
       - name: Gradle
         uses: gradle/actions/setup-gradle@v4
