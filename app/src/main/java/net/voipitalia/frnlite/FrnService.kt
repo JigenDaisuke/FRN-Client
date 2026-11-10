@@ -20,7 +20,13 @@ class FrnService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(1, buildNotification())
+        // A microphone-type foreground service throws if RECORD_AUDIO isn't granted
+        // yet; never let that crash the app.
+        try {
+            startForeground(1, buildNotification())
+        } catch (e: Exception) {
+            stopSelf()
+        }
         return START_STICKY
     }
 

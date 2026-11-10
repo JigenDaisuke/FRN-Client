@@ -33,6 +33,9 @@ class Settings(ctx: Context) {
 
     var autoReconnect: Boolean get() = sp.getBoolean("autoReconnect", true); set(v) = sp.edit().putBoolean("autoReconnect", v).apply()
 
+    var rxGain: Float get() = sp.getFloat("rxGain", 1f); set(v) = sp.edit().putFloat("rxGain", v).apply()
+    var txGain: Float get() = sp.getFloat("txGain", 1f); set(v) = sp.edit().putFloat("txGain", v).apply()
+
     /** "system" | "light" | "dark" */
     var theme: String get() = sp.getString("theme", "system") ?: "system"; set(v) = put("theme", v)
 
