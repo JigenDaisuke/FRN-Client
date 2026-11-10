@@ -12,9 +12,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,6 +41,9 @@ import net.voipitalia.frnlite.net.FrnUser
 private val Steel = Color(0xFF1F3A5F)
 private val Amber = Color(0xFFF3C95D)
 private val TxRed = Color(0xFFC0392B)
+private val GreenOn = Color(0xFF2ECC71)
+
+private fun normDb(db: Float): Float = ((db + 55f) / 55f).coerceIn(0f, 1f)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -76,9 +84,8 @@ fun FrnApp(controller: Controller, settings: Settings) {
                     })
             },
             bottomBar = {
-                PttBar(ui.tx, enabled = ui.state == "online",
-                    onDown = { controller.ptt(true) }, onUp = { controller.ptt(false) },
-                    muted = controller.muted, onMute = { controller.muted = !controller.muted })
+                PttArea(ui, controller,
+                    onDown = { controller.ptt(true) }, onUp = { controller.ptt(false) })
             }
         ) { pad ->
             Column(Modifier.padding(pad).fillMaxSize()) {
@@ -141,20 +148,34 @@ private fun ConnectRow(state: String, settings: Settings, onConnect: () -> Unit,
 
 @Composable
 private fun Readout(talker: FrnUser?, tx: String, room: String, state: String) {
-    val bg = when { tx == "on" -> TxRed; talker != null -> Amber; else -> Color(0xFFE8E2CF) }
-    Surface(color = bg, shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth().padding(12.dp, 4.dp)) {
-        Column(Modifier.padding(16.dp)) {
-            val big = when { tx == "on" -> "IN ONDA"; tx == "waiting" -> "ATTESA"
-                talker != null -> talker.callsign.ifEmpty { "?" }
-                state == "online" -> "QRV"; else -> "—" }
-            Text(big, fontSize = 30.sp, fontWeight = FontWeight.Bold,
-                color = if (tx == "on") Color.White else Steel)
-            val sub = when { tx == "on" -> "Stai trasmettendo in $room"
-                tx == "waiting" -> "Richiesta del canale…"
-                talker != null -> listOf(talker.name, talker.city).filter { it.isNotBlank() }.joinToString(" · ")
-                state == "online" -> "Nessuno in trasmissione"; else -> "Non connesso" }
-            Text(sub, color = if (tx == "on") Color.White else Steel)
+    val transmitting = tx == "on"
+    val receiving = talker != null && !transmitting
+    val active = transmitting || receiving
+    val accent = when { transmitting -> TxRed; receiving -> GreenOn; tx == "waiting" -> Amber; else -> Color(0xFF5A6B7A) }
+    val key = if (transmitting) "tx" else talker?.id ?: "idle"
+    var seconds by remember(key) { mutableStateOf(0) }
+    LaunchedEffect(key) {
+        seconds = 0
+        if (active) while (true) { kotlinx.coroutines.delay(1000); seconds++ }
+    }
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth().padding(12.dp, 6.dp)
+            .border(if (active) 2.dp else 1.dp, accent, RoundedCornerShape(14.dp))) {
+        Column(Modifier.padding(16.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            if (active) {
+                Text("● IN ONDA", color = accent, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(if (transmitting) "TU" else talker!!.callsign.ifEmpty { "?" },
+                    fontSize = 30.sp, fontWeight = FontWeight.Bold)
+                if (receiving) {
+                    if (talker!!.name.isNotBlank()) Text(talker.name)
+                    val place = listOf(talker.city, talker.country).filter { it.isNotBlank() }.joinToString(" · ")
+                    if (place.isNotBlank()) Text(place, fontSize = 12.sp, color = Color.Gray)
+                }
+                Text("%d:%02d".format(seconds / 60, seconds % 60), color = accent, fontWeight = FontWeight.Medium)
+            } else {
+                Text(if (state == "online") "QRV" else "—", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                Text(if (state == "online") "Nessuno in trasmissione" else "Non connesso", color = Color.Gray)
+            }
         }
     }
 }
@@ -244,26 +265,52 @@ private fun UserMenu(u: FrnUser, onDismiss: () -> Unit, onAction: (String) -> Un
 }
 
 @Composable
-private fun PttBar(tx: String, enabled: Boolean, onDown: () -> Unit, onUp: () -> Unit,
-                   muted: Boolean, onMute: () -> Unit) {
-    val bg = when (tx) { "on" -> TxRed; "waiting" -> Amber; else -> Steel }
-    Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center) {
+private fun PttArea(ui: net.voipitalia.frnlite.UiState, controller: Controller,
+                   onDown: () -> Unit, onUp: () -> Unit) {
+    var txLevel by remember { mutableStateOf(0f) }
+    var rxLevel by remember { mutableStateOf(0f) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            txLevel = normDb(controller.inLevelDb)
+            rxLevel = normDb(controller.outLevelDb)
+            kotlinx.coroutines.delay(60)
+        }
+    }
+    val transmitting = ui.tx == "on"
+    val receiving = ui.talker != null && !transmitting
+    val enabled = ui.state == "online"
+    val level = when { transmitting -> txLevel; receiving -> rxLevel; else -> 0f }
+    val accent = when { transmitting -> TxRed; receiving -> GreenOn; ui.tx == "waiting" -> Amber; else -> Steel }
+    Box(Modifier.fillMaxWidth().height(208.dp), contentAlignment = Alignment.Center) {
+        // S-meter ring around the button (green in RX, red in TX)
+        Canvas(Modifier.size(196.dp)) {
+            val pad = 10.dp.toPx()
+            val tl = Offset(pad, pad)
+            val sz = Size(size.width - 2 * pad, size.height - 2 * pad)
+            val stroke = Stroke(width = 14.dp.toPx(), cap = StrokeCap.Round)
+            drawArc(accent.copy(alpha = 0.18f), 135f, 270f, false, tl, sz, style = stroke)
+            drawArc(accent, 135f, 270f * level.coerceIn(0f, 1f), false, tl, sz, style = stroke)
+        }
         Box(
-            Modifier.size(150.dp).clip(CircleShape)
-                .background(if (enabled) bg else Color(0xFFB0B0B0))
+            Modifier.size(150.dp, 112.dp).clip(RoundedCornerShape(56.dp))
+                .background(if (enabled) accent else Color(0xFF8A8A8A))
                 .pointerInput(enabled) {
                     if (enabled) detectTapGestures(onPress = { onDown(); tryAwaitRelease(); onUp() })
                 },
             contentAlignment = Alignment.Center
         ) {
-            Text(when (tx) { "on" -> "IN ONDA"; "waiting" -> "ATTENDI…"; else -> "PARLA" },
-                color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp,
-                textAlign = TextAlign.Center)
-        }
-        Spacer(Modifier.width(20.dp))
-        IconButton(onClick = onMute) {
-            Text(if (muted) "🔇" else "🔊", fontSize = 22.sp)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                val label = when {
+                    transmitting -> "IN ONDA"
+                    ui.tx == "waiting" -> "ATTENDI…"
+                    receiving -> ui.talker!!.callsign.ifEmpty { "RX" }
+                    else -> "PARLA"
+                }
+                Text(label, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 22.sp,
+                    textAlign = TextAlign.Center)
+                if (receiving && ui.talker!!.name.isNotBlank())
+                    Text(ui.talker!!.name, color = Color.White.copy(alpha = .9f), fontSize = 12.sp)
+            }
         }
     }
 }

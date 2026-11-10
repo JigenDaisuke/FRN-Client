@@ -93,6 +93,7 @@ class FrnClient(private val onEvent: (FrnEvent) -> Unit) {
 
     private var socket: Socket? = null
     private val sender = Executors.newSingleThreadExecutor { r -> Thread(r, "frn-send").apply { isDaemon = true } }
+    private val lifecycle = Executors.newSingleThreadExecutor { r -> Thread(r, "frn-life").apply { isDaemon = true } }
     private var netThread: Thread? = null
     @Volatile private var stop = false
 
@@ -104,20 +105,30 @@ class FrnClient(private val onEvent: (FrnEvent) -> Unit) {
 
     // ------------------------------------------------------------------ API
     fun connect(host: String, port: Int, room: String, account: Account, autoReconnect: Boolean = true) {
-        disconnect()
         this.host = host.trim(); this.port = port; this.room = room.trim()
         this.account = account; this.autoReconnect = autoReconnect
-        stop = false
-        netThread = thread(name = "frn-net", isDaemon = true) { run() }
+        // Serialize teardown + start on a background thread: the old session must
+        // be fully closed (so the server frees it) before the new login, or the
+        // server rejects it as a duplicate (DUPL).
+        lifecycle.execute {
+            teardown()
+            stop = false
+            netThread = thread(name = "frn-net", isDaemon = true) { run() }
+        }
     }
 
     fun disconnect() {
+        lifecycle.execute { teardown(); setState("disconnected") }
+    }
+
+    private fun teardown() {
+        val had = netThread != null
         stop = true
-        val s = socket
-        // close off the UI thread; the daemon net thread exits on the stop flag
-        sender.execute { runCatching { s?.close() } }
+        runCatching { socket?.close() }
+        netThread?.let { if (it != Thread.currentThread()) runCatching { it.join(3000) } }
         netThread = null
-        setState("disconnected")
+        // give the server a moment to release the old session before re-login
+        if (had) runCatching { Thread.sleep(400) }
     }
 
     /** FRN has no join command: reconnect to the same server, other room. */
