@@ -5,6 +5,7 @@ import java.io.InputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.charset.Charset
+import java.util.concurrent.Executors
 import kotlin.concurrent.thread
 
 /** Account used to log in to an FRN server. */
@@ -91,7 +92,7 @@ class FrnClient(private val onEvent: (FrnEvent) -> Unit) {
     private var autoReconnect = true
 
     private var socket: Socket? = null
-    private val sendLock = Any()
+    private val sender = Executors.newSingleThreadExecutor { r -> Thread(r, "frn-send").apply { isDaemon = true } }
     private var netThread: Thread? = null
     @Volatile private var stop = false
 
@@ -112,8 +113,9 @@ class FrnClient(private val onEvent: (FrnEvent) -> Unit) {
 
     fun disconnect() {
         stop = true
-        socket?.let { runCatching { it.close() } }
-        netThread?.let { if (it.isAlive && it != Thread.currentThread()) it.join(3000) }
+        val s = socket
+        // close off the UI thread; the daemon net thread exits on the stop flag
+        sender.execute { runCatching { s?.close() } }
         netThread = null
         setState("disconnected")
     }
@@ -182,8 +184,13 @@ class FrnClient(private val onEvent: (FrnEvent) -> Unit) {
 
     private fun send(data: ByteArray) {
         val s = socket ?: return
-        runCatching { synchronized(sendLock) { s.getOutputStream().write(data); s.getOutputStream().flush() } }
-            .onFailure { emit(FrnEvent.Log("send error: ${it.message}")) }
+        // Android forbids socket I/O on the main thread (NetworkOnMainThreadException);
+        // a single-thread executor keeps every write off the UI thread and ordered.
+        sender.execute {
+            runCatching {
+                val os = s.getOutputStream(); os.write(data); os.flush()
+            }.onFailure { emit(FrnEvent.Log("send error: ${it.message}")) }
+        }
     }
 
     private fun sendLine(line: String) = send(line.toByteArray(textEncoding) + "\r\n".toByteArray())

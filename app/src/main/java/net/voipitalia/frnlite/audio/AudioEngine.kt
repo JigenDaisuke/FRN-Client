@@ -51,8 +51,10 @@ class AudioEngine(private val onPacket: (ShortArray) -> Unit) {
             val outBuf = maxOf(AudioTrack.getMinBufferSize(RATE,
                 AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT), PACKET * 4)
             track = AudioTrack(
+                // USAGE_MEDIA routes to the loudspeaker at media volume, so received
+                // audio is clearly audible (VOICE_COMMUNICATION would use the earpiece).
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build(),
                 AudioFormat.Builder().setSampleRate(RATE)
                     .setEncoding(AudioFormat.ENCODING_PCM_16BIT)

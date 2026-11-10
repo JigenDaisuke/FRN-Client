@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -45,6 +46,7 @@ fun FrnApp(controller: Controller, settings: Settings) {
     var menuUser by remember { mutableStateOf<FrnUser?>(null) }
     var target by remember { mutableStateOf<FrnUser?>(null) }
     var tab by remember { mutableStateOf(0) }
+    var themeMode by remember { mutableStateOf(settings.theme) }
 
     LaunchedEffect(Unit) {
         controller.ui.collectLatest { st ->
@@ -57,7 +59,10 @@ fun FrnApp(controller: Controller, settings: Settings) {
         else if (ui.state == "disconnected") FrnService.stop(ctx)
     }
 
-    MaterialTheme(colorScheme = lightColorScheme(primary = Steel)) {
+    val dark = when (themeMode) { "dark" -> true; "light" -> false; else -> isSystemInDarkTheme() }
+    val colors = if (dark) darkColorScheme(primary = Color(0xFF8FB4E3))
+                 else lightColorScheme(primary = Steel)
+    MaterialTheme(colorScheme = colors) {
         Scaffold(
             snackbarHost = { SnackbarHost(snackbar) },
             topBar = {
@@ -100,7 +105,8 @@ fun FrnApp(controller: Controller, settings: Settings) {
             }
         } }
         if (showAdmin) AdminDialog(ui, controller, settings) { showAdmin = false }
-        if (showSettings) SettingsDialog(settings) { showSettings = false }
+        if (showSettings) SettingsDialog(settings, themeMode,
+            onTheme = { themeMode = it; settings.theme = it }) { showSettings = false }
     }
 }
 

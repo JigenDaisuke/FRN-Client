@@ -33,6 +33,9 @@ class Settings(ctx: Context) {
 
     var autoReconnect: Boolean get() = sp.getBoolean("autoReconnect", true); set(v) = sp.edit().putBoolean("autoReconnect", v).apply()
 
+    /** "system" | "light" | "dark" */
+    var theme: String get() = sp.getString("theme", "system") ?: "system"; set(v) = put("theme", v)
+
     /** Session-only: server editing unlocked with the password (never persisted). */
     @Volatile var unlocked: Boolean = false
     fun unlock(pw: String): Boolean { if (Brand.LOCKED && pw == Brand.UNLOCK_PASSWORD) unlocked = true; return unlocked }

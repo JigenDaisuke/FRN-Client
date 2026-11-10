@@ -16,7 +16,7 @@ import net.voipitalia.frnlite.Controller
 import net.voipitalia.frnlite.Settings
 
 @Composable
-fun SettingsDialog(settings: Settings, onClose: () -> Unit) {
+fun SettingsDialog(settings: Settings, themeMode: String, onTheme: (String) -> Unit, onClose: () -> Unit) {
     var callsign by remember { mutableStateOf(settings.callsign) }
     var name by remember { mutableStateOf(settings.name) }
     var email by remember { mutableStateOf(settings.email) }
@@ -70,6 +70,14 @@ fun SettingsDialog(settings: Settings, onClose: () -> Unit) {
                 field("Indirizzo", host, enabled = unlocked) { host = it }
                 field("Porta", port, enabled = unlocked, number = true) { port = it }
                 field("Stanza iniziale", room) { room = it }
+                Spacer(Modifier.height(10.dp))
+                Text("Tema", style = MaterialTheme.typography.titleSmall)
+                Row {
+                    listOf("system" to "Sistema", "light" to "Chiaro", "dark" to "Scuro").forEach { (k, lbl) ->
+                        FilterChip(selected = themeMode == k, onClick = { onTheme(k) },
+                            label = { Text(lbl) }, modifier = Modifier.padding(end = 6.dp))
+                    }
+                }
             }
         })
 }
