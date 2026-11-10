@@ -11,12 +11,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import net.voipitalia.frnlite.Brand
 import net.voipitalia.frnlite.Controller
 import net.voipitalia.frnlite.Settings
 
 @Composable
-fun SettingsDialog(settings: Settings, themeMode: String, onTheme: (String) -> Unit, onClose: () -> Unit) {
+fun SettingsDialog(settings: Settings, controller: Controller, themeMode: String,
+                   onTheme: (String) -> Unit, onClose: () -> Unit) {
     var callsign by remember { mutableStateOf(settings.callsign) }
     var name by remember { mutableStateOf(settings.name) }
     var email by remember { mutableStateOf(settings.email) }
@@ -70,6 +72,20 @@ fun SettingsDialog(settings: Settings, themeMode: String, onTheme: (String) -> U
                 field("Indirizzo", host, enabled = unlocked) { host = it }
                 field("Porta", port, enabled = unlocked, number = true) { port = it }
                 field("Stanza iniziale", room) { room = it }
+                Spacer(Modifier.height(10.dp))
+                Text("Audio", style = MaterialTheme.typography.titleSmall)
+                var tx by remember { mutableStateOf(controller.txGain) }
+                var rx by remember { mutableStateOf(controller.rxGain) }
+                var level by remember { mutableStateOf(-90f) }
+                LaunchedEffect(Unit) { while (true) { level = controller.inLevelDb; delay(100) } }
+                Text("Guadagno microfono: ${"%.1f".format(tx)}×")
+                Slider(value = tx, onValueChange = { tx = it; controller.setTxGain(it) }, valueRange = 0f..3f)
+                Text("Livello microfono", style = MaterialTheme.typography.bodySmall)
+                LinearProgressIndicator(progress = { ((level + 60f) / 60f).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(6.dp))
+                Text("Volume ricezione: ${"%.1f".format(rx)}×")
+                Slider(value = rx, onValueChange = { rx = it; controller.setRxGain(it) }, valueRange = 0f..3f)
                 Spacer(Modifier.height(10.dp))
                 Text("Tema", style = MaterialTheme.typography.titleSmall)
                 Row {

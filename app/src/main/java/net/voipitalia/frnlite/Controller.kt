@@ -47,8 +47,18 @@ class Controller(private val settings: Settings) {
     @Volatile private var txWant = false
     private val pending = ArrayList<ByteArray>()
 
-    fun start() { audio.start() }
+    fun start() {
+        audio.rxGain = settings.rxGain
+        audio.txGain = settings.txGain
+        audio.start()
+    }
     fun shutdown() { ptt(false); client.disconnect(); audio.stop() }
+
+    // ---- audio controls -------------------------------------------------
+    fun setTxGain(v: Float) { audio.txGain = v; settings.txGain = v }
+    fun setRxGain(v: Float) { audio.rxGain = v; settings.rxGain = v }
+    val txGain get() = audio.txGain
+    val rxGain get() = audio.rxGain
 
     // ------------------------------------------------------------- actions
     fun connect() {

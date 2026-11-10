@@ -12,7 +12,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -105,7 +107,7 @@ fun FrnApp(controller: Controller, settings: Settings) {
             }
         } }
         if (showAdmin) AdminDialog(ui, controller, settings) { showAdmin = false }
-        if (showSettings) SettingsDialog(settings, themeMode,
+        if (showSettings) SettingsDialog(settings, controller, themeMode,
             onTheme = { themeMode = it; settings.theme = it }) { showSettings = false }
     }
 }
@@ -244,20 +246,24 @@ private fun UserMenu(u: FrnUser, onDismiss: () -> Unit, onAction: (String) -> Un
 @Composable
 private fun PttBar(tx: String, enabled: Boolean, onDown: () -> Unit, onUp: () -> Unit,
                    muted: Boolean, onMute: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        val bg = when (tx) { "on" -> TxRed; "waiting" -> Amber; else -> Steel }
-        Surface(color = if (enabled) bg else Color.Gray, shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.weight(1f).height(84.dp).pointerInput(enabled) {
-                if (enabled) detectTapGestures(onPress = {
-                    onDown(); tryAwaitRelease(); onUp()
-                })
-            }) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(when (tx) { "on" -> "IN TRASMISSIONE"; "waiting" -> "ATTENDI…"; else -> "PREMI PER PARLARE" },
-                    color = Color.White, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-            }
+    val bg = when (tx) { "on" -> TxRed; "waiting" -> Amber; else -> Steel }
+    Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center) {
+        Box(
+            Modifier.size(150.dp).clip(CircleShape)
+                .background(if (enabled) bg else Color(0xFFB0B0B0))
+                .pointerInput(enabled) {
+                    if (enabled) detectTapGestures(onPress = { onDown(); tryAwaitRelease(); onUp() })
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(when (tx) { "on" -> "IN ONDA"; "waiting" -> "ATTENDI…"; else -> "PARLA" },
+                color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp,
+                textAlign = TextAlign.Center)
         }
-        Spacer(Modifier.width(8.dp))
-        IconButton(onClick = onMute) { Text(if (muted) "🔇" else "🔊") }
+        Spacer(Modifier.width(20.dp))
+        IconButton(onClick = onMute) {
+            Text(if (muted) "🔇" else "🔊", fontSize = 22.sp)
+        }
     }
 }
