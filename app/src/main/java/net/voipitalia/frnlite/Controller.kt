@@ -47,12 +47,15 @@ class Controller(private val settings: Settings) {
     @Volatile private var txWant = false
     private val pending = ArrayList<ByteArray>()
 
-    fun start() {
+    @Volatile private var audioOn = false
+    /** Called once the RECORD_AUDIO permission is granted. */
+    fun startAudio() {
+        if (audioOn) return
         audio.rxGain = settings.rxGain
         audio.txGain = settings.txGain
-        audio.start()
+        if (audio.start()) audioOn = true
     }
-    fun shutdown() { ptt(false); client.disconnect(); audio.stop() }
+    fun shutdown() { ptt(false); client.disconnect(); audio.stop(); audioOn = false }
 
     // ---- audio controls -------------------------------------------------
     fun setTxGain(v: Float) { audio.txGain = v; settings.txGain = v }

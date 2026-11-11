@@ -11,7 +11,7 @@ class App : Application() {
         super.onCreate()
         settings = Settings(this)
         controller = Controller(settings)
-        controller.start()
+        // audio is started from MainActivity once the mic permission is granted
         instance = this
     }
 

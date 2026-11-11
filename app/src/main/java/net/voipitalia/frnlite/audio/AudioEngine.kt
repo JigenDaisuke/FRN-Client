@@ -12,8 +12,10 @@ import kotlin.concurrent.thread
 /**
  * Full-duplex 8 kHz mono audio for FRN.
  *
- * Capture delivers fixed 1600-sample (200 ms) packets to [onPacket].
- * Playback queues decoded 1600-sample packets with a short jitter buffer.
+ * The microphone is opened at a rate the device actually supports (8 kHz if it
+ * works, otherwise 48/44.1/16 kHz) and resampled down to 8 kHz — many phones
+ * return silence from a direct 8 kHz AudioRecord. Capture delivers fixed
+ * 1600-sample (200 ms) packets to [onPacket]; playback queues decoded packets.
  */
 class AudioEngine(private val onPacket: (ShortArray) -> Unit) {
 
@@ -32,6 +34,8 @@ class AudioEngine(private val onPacket: (ShortArray) -> Unit) {
 
     private var record: AudioRecord? = null
     private var track: AudioTrack? = null
+    private var captureRate = RATE
+    private var resampler: Resampler? = null
     @Volatile private var running = false
     private var capThread: Thread? = null
     private var playThread: Thread? = null
@@ -43,16 +47,15 @@ class AudioEngine(private val onPacket: (ShortArray) -> Unit) {
         stop()
         error = null
         running = true
+        val (rec, rate) = openRecord()
+        if (rec == null) { error = "Microfono non disponibile"; running = false; return false }
+        record = rec
+        captureRate = rate
+        resampler = if (rate != RATE) Resampler(rate.toDouble(), RATE.toDouble()) else null
         try {
-            val inBuf = maxOf(AudioRecord.getMinBufferSize(RATE,
-                AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT), PACKET * 2)
-            record = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, RATE,
-                AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, inBuf)
             val outBuf = maxOf(AudioTrack.getMinBufferSize(RATE,
                 AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT), PACKET * 4)
             track = AudioTrack(
-                // USAGE_MEDIA routes to the loudspeaker at media volume, so received
-                // audio is clearly audible (VOICE_COMMUNICATION would use the earpiece).
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build(),
@@ -60,7 +63,7 @@ class AudioEngine(private val onPacket: (ShortArray) -> Unit) {
                     .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build(),
                 outBuf, AudioTrack.MODE_STREAM, AudioManager.AUDIO_SESSION_ID_GENERATE)
-            record!!.startRecording()
+            rec.startRecording()
             track!!.play()
         } catch (e: Exception) {
             error = "Audio non disponibile: ${e.message}"
@@ -69,6 +72,22 @@ class AudioEngine(private val onPacket: (ShortArray) -> Unit) {
         capThread = thread(name = "frn-cap", isDaemon = true) { captureLoop() }
         playThread = thread(name = "frn-play", isDaemon = true) { playLoop() }
         return true
+    }
+
+    /** Try to open the mic at 8 kHz, else a common rate we can resample from. */
+    private fun openRecord(): Pair<AudioRecord?, Int> {
+        for (rate in intArrayOf(RATE, 48000, 44100, 16000)) {
+            val min = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+            if (min <= 0) continue
+            val buf = maxOf(min, rate / 5 * 2 * 2)   // ~400 ms headroom
+            val r = try {
+                AudioRecord(MediaRecorder.AudioSource.MIC, rate,
+                    AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, buf)
+            } catch (e: Exception) { null }
+            if (r != null && r.state == AudioRecord.STATE_INITIALIZED) return r to rate
+            runCatching { r?.release() }
+        }
+        return null to 0
     }
 
     fun stop() {
@@ -81,29 +100,30 @@ class AudioEngine(private val onPacket: (ShortArray) -> Unit) {
         playQ.clear(); synchronized(capAcc) { capAcc.clear() }
     }
 
-    /** Queue a decoded 8 kHz packet coming from the network. */
     fun play(pcm: ShortArray) {
         playQ.add(pcm)
         while (playQ.size > MAX_QUEUE) playQ.poll()
     }
 
     fun flushPlayback() = playQ.clear()
-
     val isPlaying: Boolean get() = playQ.isNotEmpty()
 
     private fun captureLoop() {
         val r = record ?: return
-        val buf = ShortArray(PACKET)
+        val raw = ShortArray(captureRate / 5)            // ~200 ms at the capture rate
+        val rs = resampler
         while (running) {
-            val n = r.read(buf, 0, buf.size)
+            val n = r.read(raw, 0, raw.size)
             if (n <= 0) continue
+            val f = FloatArray(n) { raw[it] / 32768f }
+            val f8 = rs?.process(f) ?: f
             var peak = 0.0
             synchronized(capAcc) {
-                for (i in 0 until n) {
-                    var v = (buf[i] * txGain).toInt()
-                    if (v > 32767) v = 32767 else if (v < -32768) v = -32768
-                    capAcc.add(v.toShort())
-                    peak += (v.toDouble() / 32768.0) * (v.toDouble() / 32768.0)
+                for (v in f8) {
+                    var s = (v * 32768f * txGain).toInt()
+                    if (s > 32767) s = 32767 else if (s < -32768) s = -32768
+                    capAcc.add(s.toShort())
+                    val d = s / 32768.0; peak += d * d
                 }
                 while (capAcc.size >= PACKET) {
                     val pkt = ShortArray(PACKET) { capAcc[it] }
@@ -111,18 +131,10 @@ class AudioEngine(private val onPacket: (ShortArray) -> Unit) {
                     onPacket(pkt)
                 }
             }
-            val rms = Math.sqrt(peak / n)
-            inLevelDb = if (rms > 1e-5) (20 * Math.log10(rms)).toFloat() else -90f
-        }
-    }
-
-    /** Return (and clear) audio captured since the last full packet, zero padded. */
-    fun takePartial(): ShortArray {
-        synchronized(capAcc) {
-            val out = ShortArray(PACKET)
-            for (i in 0 until minOf(capAcc.size, PACKET)) out[i] = capAcc[i]
-            capAcc.clear()
-            return out
+            if (f8.isNotEmpty()) {
+                val rms = Math.sqrt(peak / f8.size)
+                inLevelDb = if (rms > 1e-5) (20 * Math.log10(rms)).toFloat() else -90f
+            }
         }
     }
 
@@ -138,7 +150,7 @@ class AudioEngine(private val onPacket: (ShortArray) -> Unit) {
                 var v = if (muted) 0 else (pcm[i] * rxGain).toInt()
                 if (v > 32767) v = 32767 else if (v < -32768) v = -32768
                 out[i] = v.toShort()
-                peak += (v.toDouble() / 32768.0) * (v.toDouble() / 32768.0)
+                val d = v / 32768.0; peak += d * d
             }
             val rms = Math.sqrt(peak / out.size)
             outLevelDb = if (rms > 1e-5) (20 * Math.log10(rms)).toFloat() else -90f

@@ -13,13 +13,25 @@ import net.voipitalia.frnlite.ui.FrnApp
 class MainActivity : ComponentActivity() {
 
     private val permLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()) { /* result ignored: UI reflects state */ }
+        ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        if (result[Manifest.permission.RECORD_AUDIO] == true) startAudioIfAllowed()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestPerms()
         val app = application as App
         setContent { FrnApp(app.controller, app.settings) }
+        requestPerms()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        startAudioIfAllowed()
+    }
+
+    private fun startAudioIfAllowed() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+            (application as App).controller.startAudio()
     }
 
     private fun requestPerms() {
@@ -30,5 +42,6 @@ class MainActivity : ComponentActivity() {
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             need.add(Manifest.permission.POST_NOTIFICATIONS)
         if (need.isNotEmpty()) permLauncher.launch(need.toTypedArray())
+        else startAudioIfAllowed()
     }
 }
